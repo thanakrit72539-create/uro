@@ -3,49 +3,52 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PM2.5 Monitor Pro (Thailand Standard)</title>
+<title>PM2.5 Ultra Pro</title>
 
 <link rel="manifest" href="manifest.json">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;600&display=swap" rel="stylesheet">
 
 <style>
+:root{
+  --bg: #1e1e1e;
+  --card: #2c2c2c;
+  --text: white;
+}
+@media (prefers-color-scheme: light){
+  :root{
+    --bg:#f4f4f4;
+    --card:white;
+    --text:#222;
+  }
+}
+
 body{
-    font-family:'Prompt',sans-serif;
-    margin:0;
-    padding:0;
-    text-align:center;
-    transition:0.5s;
-    color:white;
+  margin:0;
+  font-family:Arial;
+  background:var(--bg);
+  color:var(--text);
+  text-align:center;
 }
 .container{
-    padding:20px;
-    max-width:900px;
-    margin:auto;
+  max-width:900px;
+  margin:auto;
+  padding:20px;
 }
 .card{
-    background:rgba(0,0,0,0.35);
-    padding:20px;
-    border-radius:20px;
-    backdrop-filter:blur(15px);
-    margin-bottom:20px;
+  background:var(--card);
+  padding:20px;
+  border-radius:20px;
+  box-shadow:0 10px 30px rgba(0,0,0,0.2);
+  margin-bottom:20px;
 }
-.pm-value{
-    font-size:60px;
-    font-weight:600;
+.pm{
+  font-size:70px;
+  font-weight:bold;
 }
-select,button{
-    padding:8px 12px;
-    border-radius:10px;
-    border:none;
-    margin:5px;
-    cursor:pointer;
-}
-canvas{
-    margin-top:20px;
-}
-h3{
-    margin-top:40px;
+#map{
+  width:100%;
+  height:300px;
+  border-radius:15px;
 }
 </style>
 </head>
@@ -53,231 +56,136 @@ h3{
 
 <div class="container">
 
-    <div class="card">
-        <h2>🌫 รายงาน PM2.5 แบบ Real-Time</h2>
-        <div id="location">กำลังโหลด...</div>
-        <div class="pm-value" id="pm25">--</div>
-        <div id="status"></div>
-        <div id="advice"></div>
+<div class="card">
+<h2>🌫 PM2.5 Real-Time</h2>
+<div id="city">กำลังโหลด...</div>
+<div class="pm" id="pm">--</div>
+<div id="status"></div>
+<div id="advice"></div>
+</div>
 
-        <div>
-            <select id="province">
-                <option value="">ใช้ตำแหน่งปัจจุบัน</option>
-                <option value="bangkok">กรุงเทพ</option>
-                <option value="chiangmai">เชียงใหม่</option>
-                <option value="chonburi">ชลบุรี</option>
-            </select>
-            <button onclick="loadManual()">ดูข้อมูล</button>
-        </div>
+<div class="card">
+<canvas id="chart"></canvas>
+</div>
 
-        <canvas id="aqiChart"></canvas>
-    </div>
-
-    <div class="card">
-        <h3>📊 เปรียบเทียบ PM2.5 รายจังหวัด</h3>
-        <canvas id="compareChart"></canvas>
-    </div>
+<div class="card">
+<div id="map"></div>
+</div>
 
 </div>
 
 <script>
-const TOKEN="YOUR_WAQI_TOKEN"; // ใส่ token ของคุณ
+const TOKEN="28d1b5b3fd38de7d3c494d2580af5790b51bf4a3";
 let chart;
-let compareChart;
 
-/* =========================
-   กราฟเส้น Real-Time
-========================= */
 function initChart(){
-    const ctx=document.getElementById('aqiChart');
-    chart=new Chart(ctx,{
-        type:'line',
-        data:{
-            labels:[],
-            datasets:[{
-                label:'PM2.5 (µg/m³)',
-                data:[],
-                borderWidth:2,
-                tension:0.3
-            }]
-        }
-    });
-}
-
-function updateChart(value){
-    const time=new Date().toLocaleTimeString();
-    chart.data.labels.push(time);
-    chart.data.datasets[0].data.push(value);
-    if(chart.data.labels.length>10){
-        chart.data.labels.shift();
-        chart.data.datasets[0].data.shift();
+  chart=new Chart(document.getElementById("chart"),{
+    type:'line',
+    data:{
+      labels:[],
+      datasets:[{
+        label:"PM2.5 (24 ชม.)",
+        data:[],
+        borderWidth:2
+      }]
+    },
+    options:{
+      responsive:true
     }
-    chart.update();
+  });
 }
 
-/* =========================
-   กราฟแท่งเปรียบเทียบ
-========================= */
-function initCompareChart(){
-    const ctx=document.getElementById('compareChart');
-    compareChart=new Chart(ctx,{
-        type:'bar',
-        data:{
-            labels:['กรุงเทพ','เชียงใหม่','ชลบุรี'],
-            datasets:[{
-                label:'PM2.5 (µg/m³)',
-                data:[0,0,0],
-                borderWidth:1
-            }]
-        }
-    });
+function updateChart(arr){
+  chart.data.labels = arr.map((_,i)=>i+"h");
+  chart.data.datasets[0].data = arr;
+  chart.update();
 }
 
-function updateCompareChart(values){
-    compareChart.data.datasets[0].data=values;
-    compareChart.update();
-}
-
-/* =========================
-   ดึงข้อมูล
-========================= */
-function getLocation(){
-    if(!navigator.geolocation){
-        document.getElementById("location").innerText="อุปกรณ์ไม่รองรับ GPS";
-        return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-        pos=>{
-            const lat=pos.coords.latitude;
-            const lon=pos.coords.longitude;
-            fetchData(`geo:${lat};${lon}`);
-        },
-        err=>{
-            document.getElementById("location").innerText="กรุณาอนุญาตตำแหน่งที่ตั้ง";
-        }
-    );
-}
-
-function loadManual(){
-    const province=document.getElementById("province").value;
-    if(province==="") getLocation();
-    else fetchData(province);
-}
-
-function fetchData(endpoint){
-    fetch(`https://api.waqi.info/feed/${endpoint}/?token=${TOKEN}`)
-    .then(res=>res.json())
-    .then(data=>{
-        if(data.status==="ok"){
-            const pm=data.data.iaqi?.pm25?.v;
-            if(!pm){
-                document.getElementById("location").innerText="ไม่มีข้อมูล PM2.5";
-                return;
-            }
-            document.getElementById("location").innerText=data.data.city.name;
-            updateUI(pm);
-        }else{
-            document.getElementById("location").innerText="ไม่สามารถโหลดข้อมูลได้";
-        }
-    })
-    .catch(()=>{
-        document.getElementById("location").innerText="เกิดข้อผิดพลาดในการเชื่อมต่อ";
-    });
-}
-
-/* =========================
-   โหลดข้อมูลเปรียบเทียบ
-========================= */
-function loadCompareData(){
-    const provinces=['bangkok','chiangmai','chonburi'];
-    const results=[];
-
-    provinces.forEach((prov,index)=>{
-        fetch(`https://api.waqi.info/feed/${prov}/?token=${TOKEN}`)
-        .then(res=>res.json())
-        .then(data=>{
-            if(data.status==="ok"){
-                const pm=data.data.iaqi?.pm25?.v||0;
-                results[index]=pm;
-                if(results.filter(v=>v!==undefined).length===3){
-                    updateCompareChart(results);
-                }
-            }
-        });
-    });
-}
-
-/* =========================
-   มาตรฐานไทย (PCD)
-========================= */
 function updateUI(pm){
-    document.getElementById("pm25").innerText=pm+" µg/m³";
+  document.getElementById("pm").innerText=pm;
+  let status,advice,color;
 
-    let color,status,advice;
+  if(pm<=25){
+    status="ดีมาก";
+    advice="ทำกิจกรรมกลางแจ้งได้";
+    color="#2ecc71";
+  }else if(pm<=50){
+    status="ดี";
+    advice="คุณภาพอากาศดี";
+    color="#27ae60";
+  }else if(pm<=100){
+    status="ปานกลาง";
+    advice="กลุ่มเสี่ยงควรหลีกเลี่ยงกิจกรรมหนัก";
+    color="#f1c40f";
+  }else if(pm<=150){
+    status="เริ่มมีผลกระทบ";
+    advice="ควรสวมหน้ากาก N95";
+    color="#e67e22";
+    notify(pm);
+  }else{
+    status="อันตราย";
+    advice="ควรอยู่ในอาคาร";
+    color="#e74c3c";
+    notify(pm);
+  }
 
-    if(pm<=15){
-        color="#00bfff";
-        status="ดีมาก";
-        advice="อากาศบริสุทธิ์ ทำกิจกรรมกลางแจ้งได้เต็มที่";
-    }else if(pm<=25){
-        color="#2ecc71";
-        status="ดี";
-        advice="คุณภาพอากาศดี";
-    }else if(pm<=37){
-        color="#f1c40f";
-        status="ปานกลาง";
-        advice="กลุ่มเสี่ยงควรลดกิจกรรมกลางแจ้ง";
-    }else if(pm<=50){
-        color="#e67e22";
-        status="เริ่มมีผลกระทบ";
-        advice="ควรสวมหน้ากากเมื่อออกนอกอาคาร";
-        notify(pm,status);
-    }else if(pm<=90){
-        color="#e74c3c";
-        status="มีผลกระทบต่อสุขภาพ";
-        advice="หลีกเลี่ยงกิจกรรมกลางแจ้ง";
-        notify(pm,status);
-    }else{
-        color="#8e44ad";
-        status="อันตราย";
-        advice="ควรอยู่ในอาคาร และสวมหน้ากาก N95";
-        notify(pm,status);
-    }
-
-    document.body.style.background=color;
-    document.getElementById("status").innerText=status;
-    document.getElementById("advice").innerText=advice;
-    updateChart(pm);
+  document.body.style.background=color;
+  document.getElementById("status").innerText=status;
+  document.getElementById("advice").innerText=advice;
 }
 
-/* =========================
-   Notification
-========================= */
-function notify(pm,status){
-    if(Notification.permission==="granted"){
-        new Notification("⚠ PM2.5 สูง!",{
-            body:`${pm} µg/m³ ระดับ ${status}`
-        });
-    }
+function notify(pm){
+  if(Notification.permission==="granted"){
+    new Notification("⚠ PM2.5 สูง!",{
+      body:"ค่าฝุ่น "+pm+" µg/m³"
+    });
+  }
 }
+
+function loadData(lat,lon){
+fetch(`https://api.waqi.info/feed/geo:${lat};${lon}/?token=${TOKEN}`)
+.then(r=>r.json())
+.then(d=>{
+  if(d.status==="ok"){
+    const pm=d.data.iaqi.pm25?.v || d.data.aqi;
+    document.getElementById("city").innerText=d.data.city.name;
+    updateUI(pm);
+
+    // ดึงย้อนหลัง 24 ชม.
+    const history=d.data.forecast.daily.pm25.slice(0,24).map(x=>x.avg);
+    updateChart(history);
+  }
+});
+}
+
+function initMap(lat,lon){
+  const map=new google.maps.Map(document.getElementById("map"),{
+    center:{lat, lng:lon},
+    zoom:10
+  });
+  new google.maps.Marker({position:{lat,lng:lon},map:map});
+}
+
+navigator.geolocation.getCurrentPosition(pos=>{
+  const lat=pos.coords.latitude;
+  const lon=pos.coords.longitude;
+  loadData(lat,lon);
+  initMap(lat,lon);
+});
 
 if(Notification.permission!=="granted"){
-    Notification.requestPermission();
+  Notification.requestPermission();
 }
 
-/* =========================
-   เริ่มทำงาน
-========================= */
 initChart();
-initCompareChart();
-getLocation();
-loadCompareData();
-setInterval(getLocation,300000);
 
-if('serviceWorker' in navigator){
-    navigator.serviceWorker.register('sw.js');
+if("serviceWorker" in navigator){
+  navigator.serviceWorker.register("sw.js");
 }
+</script>
+
+<script async
+src="https://maps.googleapis.com/maps/api/js?key=YOUR_GOOGLE_MAPS_API_KEY">
 </script>
 
 </body>
