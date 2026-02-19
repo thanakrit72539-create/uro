@@ -3,135 +3,163 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>รายงานค่าฝุ่น PM2.5</title>
+<title>รายงานค่าฝุ่น PM2.5 แบบเรียลไทม์</title>
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
 <style>
-body{
+body {
     font-family: 'Segoe UI', sans-serif;
-    margin:0;
-    padding:20px;
-    text-align:center;
-    transition: background 0.5s ease;
-    color:#fff;
+    margin: 0;
+    padding: 0;
+    text-align: center;
+    transition: background 0.5s;
 }
-.container{
-    max-width:800px;
-    margin:auto;
-    background: rgba(0,0,0,0.5);
-    padding:20px;
-    border-radius:15px;
+
+.container {
+    padding: 20px;
 }
-h1{margin-bottom:10px;}
-.pm-value{
-    font-size:48px;
-    font-weight:bold;
+
+.card {
+    background: rgba(255,255,255,0.9);
+    border-radius: 15px;
+    padding: 20px;
+    max-width: 500px;
+    margin: auto;
+    box-shadow: 0 5px 20px rgba(0,0,0,0.2);
 }
-.normal{
-    font-size:16px;
-    margin-bottom:15px;
+
+h1 {
+    margin-bottom: 10px;
 }
-.advice{
-    margin-top:15px;
-    font-size:18px;
+
+.pm-value {
+    font-size: 50px;
+    font-weight: bold;
 }
-canvas{
-    margin-top:20px;
+
+.status {
+    font-size: 20px;
+    margin-bottom: 10px;
 }
-@media(max-width:600px){
-    .pm-value{font-size:36px;}
+
+.advice {
+    margin-top: 15px;
+    font-size: 16px;
+}
+
+canvas {
+    margin-top: 20px;
+}
+
+@media (max-width:600px){
+    .pm-value{
+        font-size:40px;
+    }
 }
 </style>
 </head>
+
 <body>
 
 <div class="container">
-    <h1>รายงานค่าฝุ่น PM2.5 (Real-time)</h1>
-    <div id="location">กำลังตรวจสอบพิกัด...</div>
-    <div class="pm-value" id="pmValue">--</div>
-    <div class="normal">ค่าปกติไม่เกิน 37.5 µg/m³ (ค่าเฉลี่ย 24 ชม.)</div>
-    <div class="advice" id="healthAdvice"></div>
-    <canvas id="pmChart"></canvas>
+    <div class="card">
+        <h1>รายงานค่าฝุ่น PM2.5</h1>
+        <p id="location">กำลังค้นหาพิกัด...</p>
+        <div class="pm-value" id="pmValue">--</div>
+        <div class="status" id="statusText">กำลังโหลดข้อมูล...</div>
+        <p>ค่ามาตรฐานปกติ (ไทย): ไม่เกิน 37.5 µg/m³</p>
+        <canvas id="pmChart"></canvas>
+        <div class="advice" id="healthAdvice"></div>
+    </div>
 </div>
 
 <script>
-const TOKEN = "28d1b5b3fd38de7d3c494d2580af5790b51bf4a3";
 
-function getColor(pm){
-    if(pm <= 37.5) return "#2ecc71";       // ดี
-    if(pm <= 75) return "#f1c40f";         // ปานกลาง
-    if(pm <= 150) return "#e67e22";        // เริ่มมีผลกระทบ
-    return "#e74c3c";                      // อันตรายมาก
-}
+let chart;
 
-function getAdvice(pm){
-    if(pm <= 37.5) 
-        return "คุณภาพอากาศดี สามารถทำกิจกรรมกลางแจ้งได้ตามปกติ";
-    if(pm <= 75) 
-        return "กลุ่มเสี่ยงควรลดเวลาทำกิจกรรมกลางแจ้ง";
-    if(pm <= 150) 
-        return "ควรสวมหน้ากาก N95 และหลีกเลี่ยงกิจกรรมกลางแจ้ง";
-    return "อันตรายมาก ควรอยู่ในอาคาร ปิดประตูหน้าต่าง และใช้เครื่องฟอกอากาศ";
-}
-
-function loadPM(lat, lon){
-    fetch(`https://api.airvisual.com/v2/nearest_city?lat=${lat}&lon=${lon}&key=${TOKEN}`)
-    .then(res=>res.json())
-    .then(data=>{
-        const pm = data.data.current.pollution.aqius;
-        document.getElementById("pmValue").innerHTML = pm + " µg/m³";
-        document.body.style.background = getColor(pm);
-        document.getElementById("healthAdvice").innerHTML = getAdvice(pm);
-        document.getElementById("location").innerHTML = 
-            data.data.city + ", " + data.data.state;
-
-        createChart(pm);
-    })
-    .catch(err=>{
-        alert("ไม่สามารถดึงข้อมูลได้");
-    });
+function getPMStatus(pm) {
+    if (pm <= 37.5) {
+        return {text:"คุณภาพอากาศดี", color:"#4CAF50",
+        advice:"สามารถทำกิจกรรมกลางแจ้งได้ตามปกติ"};
+    } 
+    else if (pm <= 75) {
+        return {text:"ปานกลาง", color:"#FFC107",
+        advice:"ควรลดเวลาทำกิจกรรมกลางแจ้ง และสวมหน้ากาก"};
+    } 
+    else {
+        return {text:"อันตรายมาก", color:"#F44336",
+        advice:"หลีกเลี่ยงกิจกรรมกลางแจ้ง สวมหน้ากาก N95 และอยู่ในอาคาร"};
+    }
 }
 
 function createChart(pm){
-    new Chart(document.getElementById('pmChart'),{
-        type:'bar',
-        data:{
-            labels:["น้อย (≤37.5)","ปานกลาง (≤75)","อันตรายมาก (>150)"],
-            datasets:[{
-                label:"ค่า PM2.5 ปัจจุบัน",
-                data:[
-                    pm<=37.5?pm:37.5,
-                    pm>37.5 && pm<=75?pm:0,
-                    pm>150?pm:0
+    const ctx = document.getElementById('pmChart').getContext('2d');
+
+    if(chart) chart.destroy();
+
+    chart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: ['น้อย', 'ปานกลาง', 'อันตรายมาก'],
+            datasets: [{
+                label: 'ระดับค่าฝุ่น',
+                data: [
+                    Math.min(pm,37.5),
+                    pm>37.5? Math.min(pm-37.5,37.5):0,
+                    pm>75? pm-75:0
                 ],
-                backgroundColor:[
-                    "#2ecc71","#f1c40f","#e74c3c"
-                ]
+                backgroundColor: ['#4CAF50','#FFC107','#F44336']
             }]
         },
-        options:{
+        options: {
             responsive:true,
-            plugins:{
-                legend:{display:false}
-            },
-            scales:{
-                y:{beginAtZero:true}
-            }
+            plugins:{legend:{display:false}},
+            scales:{y:{beginAtZero:true}}
         }
+    });
+}
+
+function fetchPM(lat, lon){
+    const url = `https://api.openaq.org/v2/latest?coordinates=${lat},${lon}&radius=5000&parameter=pm25`;
+
+    fetch(url)
+    .then(res=>res.json())
+    .then(data=>{
+        if(data.results.length>0){
+            const pm = data.results[0].measurements[0].value;
+            document.getElementById("pmValue").innerText = pm + " µg/m³";
+
+            const status = getPMStatus(pm);
+            document.getElementById("statusText").innerText = status.text;
+            document.getElementById("healthAdvice").innerText = "คำแนะนำ: " + status.advice;
+            document.body.style.background = status.color;
+
+            createChart(pm);
+        } else {
+            document.getElementById("statusText").innerText = "ไม่พบข้อมูลในพื้นที่นี้";
+        }
+    })
+    .catch(()=>{
+        document.getElementById("statusText").innerText = "เกิดข้อผิดพลาดในการโหลดข้อมูล";
     });
 }
 
 if(navigator.geolocation){
-    navigator.geolocation.getCurrentPosition(
-        pos=>{
-            loadPM(pos.coords.latitude,pos.coords.longitude);
-        },
-        ()=>{
-            alert("กรุณาอนุญาตการเข้าถึงตำแหน่ง");
-        }
-    );
-}else{
-    alert("อุปกรณ์ไม่รองรับ Geolocation");
+    navigator.geolocation.getCurrentPosition(position=>{
+        const lat = position.coords.latitude;
+        const lon = position.coords.longitude;
+        document.getElementById("location").innerText = 
+            "พิกัด: " + lat.toFixed(4) + ", " + lon.toFixed(4);
+        fetchPM(lat,lon);
+    },
+    ()=>{
+        document.getElementById("location").innerText = "ไม่สามารถเข้าถึงพิกัดได้";
+    });
+} else {
+    document.getElementById("location").innerText = "เบราว์เซอร์ไม่รองรับ Geolocation";
 }
+
 </script>
 
 </body>
