@@ -3,8 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>รายงานค่าฝุ่น PM2.5 แบบเรียลไทม์</title>
-
+<title>รายงานค่าฝุ่น PM2.5 ประเทศไทย</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
@@ -23,141 +22,176 @@ body{
     border-radius:15px;
     box-shadow:0 10px 25px rgba(0,0,0,0.1);
 }
-h1{
-    margin-bottom:10px;
+h1{ margin-bottom:15px; }
+
+select,input,button{
+    padding:10px;
+    font-size:16px;
+    border-radius:8px;
+    border:1px solid #ccc;
+    margin:5px;
 }
+
+button{
+    background:#2196F3;
+    color:white;
+    cursor:pointer;
+}
+
 .pm-value{
-    font-size:60px;
+    font-size:55px;
     font-weight:bold;
 }
+
 .status{
     font-size:22px;
-    margin-bottom:15px;
+    margin:10px 0;
 }
+
 .advice{
-    margin-top:15px;
     padding:15px;
     border-radius:10px;
     font-size:18px;
+    margin-top:10px;
 }
-canvas{
-    margin-top:20px;
-}
-.footer{
-    margin-top:20px;
-    font-size:14px;
-    color:gray;
-}
+
+canvas{ margin-top:20px; }
+
 @media (max-width:600px){
-    .pm-value{
-        font-size:40px;
-    }
+    .pm-value{ font-size:38px; }
 }
 </style>
 </head>
 <body>
 
 <div class="container">
-    <h1>🌫 รายงานค่าฝุ่น PM2.5</h1>
-    <div id="location">กำลังตรวจสอบตำแหน่ง...</div>
-    <div class="pm-value" id="pm25">--</div>
-    <div class="status" id="status"></div>
-    <div class="advice" id="advice"></div>
-    <canvas id="pmChart"></canvas>
-    <div class="footer">ข้อมูลแบบ Real-time</div>
+<h1>🌫 รายงานค่าฝุ่น PM2.5 ประเทศไทย</h1>
+
+<!-- ช่องพิมพ์ค้นหา -->
+<input list="provinceList" id="provinceInput" placeholder="พิมพ์ชื่อจังหวัด เช่น เชียงใหม่">
+<datalist id="provinceList"></datalist>
+
+<!-- Dropdown -->
+<br>
+<select id="provinceSelect"></select>
+<button onclick="fetchPM25()">ตรวจสอบ</button>
+
+<h2 id="location"></h2>
+<div class="pm-value" id="pm25">--</div>
+<div class="status" id="status"></div>
+<div class="advice" id="advice"></div>
+<canvas id="pmChart"></canvas>
+
 </div>
 
 <script>
 const TOKEN = "28d1b5b3fd38de7d3c494d2580af5790b51bf4a3";
+let chart;
+
+/* รายชื่อ 77 จังหวัด */
+const provinces = [
+"Bangkok","Samut Prakan","Nonthaburi","Pathum Thani","Phra Nakhon Si Ayutthaya",
+"Ang Thong","Lopburi","Sing Buri","Chai Nat","Saraburi",
+"Chonburi","Rayong","Chanthaburi","Trat","Chachoengsao",
+"Prachinburi","Nakhon Nayok","Sa Kaeo",
+"Nakhon Ratchasima","Buri Ram","Surin","Si Sa Ket","Ubon Ratchathani",
+"Yasothon","Chaiyaphum","Amnat Charoen","Nong Bua Lamphu",
+"Khon Kaen","Udon Thani","Loei","Nong Khai","Maha Sarakham",
+"Roi Et","Kalasin","Sakon Nakhon","Nakhon Phanom","Mukdahan",
+"Chiang Mai","Lamphun","Lampang","Uttaradit","Phrae",
+"Nan","Phayao","Chiang Rai","Mae Hong Son",
+"Nakhon Sawan","Uthai Thani","Kamphaeng Phet","Tak",
+"Sukhothai","Phitsanulok","Phichit","Phetchabun",
+"Ratchaburi","Kanchanaburi","Suphan Buri","Nakhon Pathom",
+"Samut Sakhon","Samut Songkhram","Phetchaburi","Prachuap Khiri Khan",
+"Nakhon Si Thammarat","Krabi","Phang Nga","Phuket",
+"Surat Thani","Ranong","Chumphon",
+"Songkhla","Satun","Trang","Phatthalung",
+"Pattani","Yala","Narathiwat","Bueng Kan"
+];
+
+/* โหลด dropdown และ datalist */
+const select = document.getElementById("provinceSelect");
+const datalist = document.getElementById("provinceList");
+
+provinces.forEach(p=>{
+    let option = document.createElement("option");
+    option.value = p;
+    select.appendChild(option);
+
+    let dataOption = document.createElement("option");
+    dataOption.value = p;
+    datalist.appendChild(dataOption);
+});
 
 function getAdvice(pm){
     if(pm <= 25){
-        return "คุณภาพอากาศดี สามารถทำกิจกรรมกลางแจ้งได้ตามปกติ";
+        return "อากาศดี ทำกิจกรรมกลางแจ้งได้ตามปกติ";
     }else if(pm <= 50){
-        return "เริ่มมีผลกระทบต่อสุขภาพ ควรลดเวลาทำกิจกรรมกลางแจ้ง";
+        return "เริ่มมีผลกระทบ ควรลดกิจกรรมกลางแจ้ง";
     }else{
         return "มีผลกระทบต่อสุขภาพ ควรสวมหน้ากาก N95 และหลีกเลี่ยงกิจกรรมกลางแจ้ง";
     }
 }
 
 function getStatus(pm){
-    if(pm <= 25){
-        return {text:"ปกติ", color:"#4CAF50"};
-    }else if(pm <= 50){
-        return {text:"ปานกลาง", color:"#FF9800"};
-    }else{
-        return {text:"อันตรายมาก", color:"#F44336"};
-    }
-}
-
-function updateBackground(color){
-    document.body.style.background = color;
+    if(pm <= 25) return {text:"ปกติ",color:"#4CAF50"};
+    if(pm <= 50) return {text:"ปานกลาง",color:"#FF9800"};
+    return {text:"อันตรายมาก",color:"#F44336"};
 }
 
 function createChart(pm){
-    new Chart(document.getElementById('pmChart'), {
-        type: 'bar',
-        data: {
-            labels: ['น้อย', 'ปานกลาง', 'อันตรายมาก'],
-            datasets: [{
-                label: 'ระดับค่าฝุ่น',
-                data: [
+    if(chart) chart.destroy();
+    chart = new Chart(document.getElementById("pmChart"),{
+        type:"bar",
+        data:{
+            labels:["น้อย","ปานกลาง","อันตรายมาก"],
+            datasets:[{
+                data:[
                     Math.min(pm,25),
                     pm>25?Math.min(pm-25,25):0,
                     pm>50?pm-50:0
                 ],
-                backgroundColor: ['#4CAF50','#FF9800','#F44336']
+                backgroundColor:["#4CAF50","#FF9800","#F44336"]
             }]
         },
         options:{
-            responsive:true,
-            plugins:{
-                legend:{display:false}
-            },
-            scales:{
-                y:{beginAtZero:true}
-            }
+            plugins:{legend:{display:false}},
+            scales:{y:{beginAtZero:true}}
         }
     });
 }
 
-function fetchPM25(lat, lon){
-    fetch(`https://api.waqi.info/feed/geo:${lat};${lon}/?token=${TOKEN}`)
-    .then(res => res.json())
-    .then(data => {
+function fetchPM25(){
+    const inputProvince = document.getElementById("provinceInput").value;
+    const selectedProvince = select.value;
+    const province = inputProvince || selectedProvince;
+
+    if(!province) return alert("กรุณาเลือกหรือพิมพ์ชื่อจังหวัด");
+
+    fetch(`https://api.waqi.info/feed/${province}/?token=${TOKEN}`)
+    .then(res=>res.json())
+    .then(data=>{
+        if(data.status !== "ok"){
+            document.getElementById("pm25").innerHTML="ไม่พบข้อมูล";
+            return;
+        }
+
         const pm = data.data.iaqi.pm25.v;
-        document.getElementById("pm25").innerHTML = pm + " µg/m³";
+        document.getElementById("location").innerHTML=data.data.city.name;
+        document.getElementById("pm25").innerHTML=pm+" µg/m³";
 
-        const status = getStatus(pm);
-        document.getElementById("status").innerHTML = status.text;
-        document.getElementById("status").style.color = status.color;
+        const status=getStatus(pm);
+        document.getElementById("status").innerHTML=status.text;
+        document.getElementById("status").style.color=status.color;
+        document.getElementById("advice").innerHTML=getAdvice(pm);
+        document.getElementById("advice").style.background=status.color+"20";
 
-        document.getElementById("advice").innerHTML = getAdvice(pm);
-        document.getElementById("advice").style.background = status.color + "20";
-
-        updateBackground(status.color + "30");
+        document.body.style.background=status.color+"30";
 
         createChart(pm);
     })
-    .catch(err => {
-        document.getElementById("pm25").innerHTML = "ไม่สามารถดึงข้อมูลได้";
-    });
-}
-
-if(navigator.geolocation){
-    navigator.geolocation.getCurrentPosition(position=>{
-        const lat = position.coords.latitude;
-        const lon = position.coords.longitude;
-        document.getElementById("location").innerHTML =
-            "พิกัด: " + lat.toFixed(4) + ", " + lon.toFixed(4);
-        fetchPM25(lat, lon);
-    }, ()=>{
-        document.getElementById("location").innerHTML =
-            "กรุณาอนุญาตการเข้าถึงตำแหน่ง";
-    });
-}else{
-    document.getElementById("location").innerHTML =
-        "เบราว์เซอร์ไม่รองรับ Geolocation";
+    .catch(()=>document.getElementById("pm25").innerHTML="เกิดข้อผิดพลาด");
 }
 </script>
 
