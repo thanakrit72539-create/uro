@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PM2.5 Monitor Pro</title>
+<title>PM2.5 Monitor Pro (Thailand Standard)</title>
 
 <link rel="manifest" href="manifest.json">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -20,14 +20,15 @@ body{
 }
 .container{
     padding:20px;
-    max-width:700px;
+    max-width:900px;
     margin:auto;
 }
 .card{
-    background:rgba(0,0,0,0.3);
+    background:rgba(0,0,0,0.35);
     padding:20px;
     border-radius:20px;
     backdrop-filter:blur(15px);
+    margin-bottom:20px;
 }
 .pm-value{
     font-size:60px;
@@ -38,15 +39,20 @@ select,button{
     border-radius:10px;
     border:none;
     margin:5px;
+    cursor:pointer;
 }
 canvas{
     margin-top:20px;
+}
+h3{
+    margin-top:40px;
 }
 </style>
 </head>
 <body>
 
 <div class="container">
+
     <div class="card">
         <h2>🌫 รายงาน PM2.5 แบบ Real-Time</h2>
         <div id="location">กำลังโหลด...</div>
@@ -66,13 +72,22 @@ canvas{
 
         <canvas id="aqiChart"></canvas>
     </div>
+
+    <div class="card">
+        <h3>📊 เปรียบเทียบ PM2.5 รายจังหวัด</h3>
+        <canvas id="compareChart"></canvas>
+    </div>
+
 </div>
 
 <script>
-const TOKEN="28d1b5b3fd38de7d3c494d2580af5790b51bf4a3";
+const TOKEN="YOUR_WAQI_TOKEN"; // ใส่ token ของคุณ
 let chart;
-let historyData=[];
+let compareChart;
 
+/* =========================
+   กราฟเส้น Real-Time
+========================= */
 function initChart(){
     const ctx=document.getElementById('aqiChart');
     chart=new Chart(ctx,{
@@ -80,9 +95,10 @@ function initChart(){
         data:{
             labels:[],
             datasets:[{
-                label:'PM2.5',
+                label:'PM2.5 (µg/m³)',
                 data:[],
-                borderWidth:2
+                borderWidth:2,
+                tension:0.3
             }]
         }
     });
@@ -99,12 +115,48 @@ function updateChart(value){
     chart.update();
 }
 
-function getLocation(){
-    navigator.geolocation.getCurrentPosition(pos=>{
-        const lat=pos.coords.latitude;
-        const lon=pos.coords.longitude;
-        fetchData(`geo:${lat};${lon}`);
+/* =========================
+   กราฟแท่งเปรียบเทียบ
+========================= */
+function initCompareChart(){
+    const ctx=document.getElementById('compareChart');
+    compareChart=new Chart(ctx,{
+        type:'bar',
+        data:{
+            labels:['กรุงเทพ','เชียงใหม่','ชลบุรี'],
+            datasets:[{
+                label:'PM2.5 (µg/m³)',
+                data:[0,0,0],
+                borderWidth:1
+            }]
+        }
     });
+}
+
+function updateCompareChart(values){
+    compareChart.data.datasets[0].data=values;
+    compareChart.update();
+}
+
+/* =========================
+   ดึงข้อมูล
+========================= */
+function getLocation(){
+    if(!navigator.geolocation){
+        document.getElementById("location").innerText="อุปกรณ์ไม่รองรับ GPS";
+        return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+        pos=>{
+            const lat=pos.coords.latitude;
+            const lon=pos.coords.longitude;
+            fetchData(`geo:${lat};${lon}`);
+        },
+        err=>{
+            document.getElementById("location").innerText="กรุณาอนุญาตตำแหน่งที่ตั้ง";
+        }
+    );
 }
 
 function loadManual(){
@@ -118,33 +170,78 @@ function fetchData(endpoint){
     .then(res=>res.json())
     .then(data=>{
         if(data.status==="ok"){
-            const pm=data.data.iaqi.pm25?.v || data.data.aqi;
+            const pm=data.data.iaqi?.pm25?.v;
+            if(!pm){
+                document.getElementById("location").innerText="ไม่มีข้อมูล PM2.5";
+                return;
+            }
             document.getElementById("location").innerText=data.data.city.name;
             updateUI(pm);
+        }else{
+            document.getElementById("location").innerText="ไม่สามารถโหลดข้อมูลได้";
         }
+    })
+    .catch(()=>{
+        document.getElementById("location").innerText="เกิดข้อผิดพลาดในการเชื่อมต่อ";
     });
 }
 
+/* =========================
+   โหลดข้อมูลเปรียบเทียบ
+========================= */
+function loadCompareData(){
+    const provinces=['bangkok','chiangmai','chonburi'];
+    const results=[];
+
+    provinces.forEach((prov,index)=>{
+        fetch(`https://api.waqi.info/feed/${prov}/?token=${TOKEN}`)
+        .then(res=>res.json())
+        .then(data=>{
+            if(data.status==="ok"){
+                const pm=data.data.iaqi?.pm25?.v||0;
+                results[index]=pm;
+                if(results.filter(v=>v!==undefined).length===3){
+                    updateCompareChart(results);
+                }
+            }
+        });
+    });
+}
+
+/* =========================
+   มาตรฐานไทย (PCD)
+========================= */
 function updateUI(pm){
-    document.getElementById("pm25").innerText=pm;
+    document.getElementById("pm25").innerText=pm+" µg/m³";
+
     let color,status,advice;
 
-    if(pm<=25){
-        color="#2ecc71"; status="ดีมาก";
-        advice="อากาศดี ทำกิจกรรมกลางแจ้งได้";
-    }else if(pm<=50){
-        color="#27ae60"; status="ดี";
+    if(pm<=15){
+        color="#00bfff";
+        status="ดีมาก";
+        advice="อากาศบริสุทธิ์ ทำกิจกรรมกลางแจ้งได้เต็มที่";
+    }else if(pm<=25){
+        color="#2ecc71";
+        status="ดี";
         advice="คุณภาพอากาศดี";
-    }else if(pm<=100){
-        color="#f1c40f"; status="ปานกลาง";
+    }else if(pm<=37){
+        color="#f1c40f";
+        status="ปานกลาง";
         advice="กลุ่มเสี่ยงควรลดกิจกรรมกลางแจ้ง";
-    }else if(pm<=150){
-        color="#e67e22"; status="เริ่มมีผลกระทบ";
-        advice="ควรสวมหน้ากาก N95";
+    }else if(pm<=50){
+        color="#e67e22";
+        status="เริ่มมีผลกระทบ";
+        advice="ควรสวมหน้ากากเมื่อออกนอกอาคาร";
+        notify(pm,status);
+    }else if(pm<=90){
+        color="#e74c3c";
+        status="มีผลกระทบต่อสุขภาพ";
+        advice="หลีกเลี่ยงกิจกรรมกลางแจ้ง";
         notify(pm,status);
     }else{
-        color="#e74c3c"; status="อันตราย";
-        advice="ควรอยู่ในอาคาร และสวม N95";
+        color="#8e44ad";
+        status="อันตราย";
+        advice="ควรอยู่ในอาคาร และสวมหน้ากาก N95";
         notify(pm,status);
     }
 
@@ -154,6 +251,9 @@ function updateUI(pm){
     updateChart(pm);
 }
 
+/* =========================
+   Notification
+========================= */
 function notify(pm,status){
     if(Notification.permission==="granted"){
         new Notification("⚠ PM2.5 สูง!",{
@@ -166,13 +266,19 @@ if(Notification.permission!=="granted"){
     Notification.requestPermission();
 }
 
+/* =========================
+   เริ่มทำงาน
+========================= */
 initChart();
+initCompareChart();
 getLocation();
+loadCompareData();
 setInterval(getLocation,300000);
 
 if('serviceWorker' in navigator){
     navigator.serviceWorker.register('sw.js');
 }
 </script>
+
 </body>
 </html>
